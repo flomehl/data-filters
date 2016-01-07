@@ -1,0 +1,124 @@
+---
+title: "Galaxy_data"
+output: html_document
+---
+Data obtained from class 12 and 24 samples and 5 pooled samples processed with XCMS on GalaxyW4M
+
+###Intensity filtering  
+####Intensity heatmap
+```{r warning=FALSE, echo=FALSE}
+load("Galaxy_data.RData")
+
+#écrire nombre de features avant filtre
+cat("Number of features before filter = ", dim(data)[1])
+
+#heatmap des intensités sur la matrice
+##formatage des données: dépliage de la matrice
+library(reshape2)
+data.t<-t(data)
+melted_data.t<-melt(data.t)
+##heatmap
+library(ggplot2)
+ggplot(melted_data.t, aes(Var2, Var1)) + geom_raster(aes(fill = value)) + scale_fill_gradientn(colours=rainbow(4))
+```
+
+#####PCA
+```{r warning=FALSE, echo=FALSE}
+library(FactoMineR)
+##data total avec ajout en première colonne des noms d'échantillons
+SamplesNames <- as.factor(c("12", "12", "12", "12", "12", "12", "24", "24", "24", "24", "24", "24", "p", "p", "p", "p", "p" ))
+data.pca <- cbind.data.frame(SamplesNames, t(data))
+##PCA
+res.pca <- PCA(data.pca, quali.sup = 1, graph = FALSE)
+#score plot
+plot.PCA(res.pca, axes=c(1,2), choix="ind", habillage=1)
+#graphique du pourcentage de variance expliquée cumulé
+barplot(res.pca$eig[,3])
+title(main = list("Percentage of cumulative explained variance"))
+```
+
+
+###Intensity heatmap after filter
+```{r warning=FALSE, echo=FALSE}
+#Threshold intensity
+IntThresh <- 100000
+#features<IntThresh => NA
+data.IntFiltered_100000 <- data
+data.IntFiltered_100000[data.IntFiltered_100000 < IntThresh] <- NA
+#enlever les colonnes ne contenant que NA
+data.IntFiltered_100000_woNA <- data.IntFiltered_100000[rowSums(is.na(data.IntFiltered_100000))<ncol(data.IntFiltered_100000),]
+
+#écrire threshold et nombre de features
+cat("Intensity threshold = ", IntThresh)
+cat("Number of features before filter = ", dim(data)[1])
+cat("Number of features after intensity filter = ", dim(data.IntFiltered_100000_woNA)[1])
+
+#heatmap des intensités sur la matrice filtrée
+##formatage des données: dépliage de la matrice
+data.IntFiltered_100000_woNA.t<-t(data.IntFiltered_100000_woNA)
+melted_data.IntFiltered_100000_woNA<-melt(data.IntFiltered_100000_woNA.t)
+##heatmap
+library(ggplot2)
+ggplot(melted_data.IntFiltered_100000_woNA, aes(Var2, Var1)) + geom_raster(aes(fill = value)) + scale_fill_gradientn(colours=rainbow(4))
+```
+
+
+
+###Coefficient of variation filter
+```{r warning=FALSE, echo=FALSE}
+## Calcul coefficient de variation
+CV <- function(x) ( 100*sd(x)/mean(x) )
+# CV par lignes (features)
+CV_QC <- apply(data[,13:15], 1, CV)
+## histogramme des CV avec ligne threshold
+qplot(CV_QC, geom="histogram", binwidth= 5, xlim = c(0,200)) + geom_vline(xintercept = 15, colour="green")
+## choisir valeur CV limite
+Threshold_CV <- 15
+cat("Threshold CV = ", Threshold_CV)
+## sélection variables suivant valeur CV limite
+data_CVfiltered <- data[CV_QC<=Threshold_CV,]
+##écrire nombre features après filtre
+cat("Number of features before filter = ", dim(data)[1])
+cat("Number of features after CV filter = ", dim(data_CVfiltered)[1])
+```
+
+###biological vs analytical variation filter
+```{r warning=FALSE, echo=FALSE}
+#Calcul CV par feature sur tous les QC
+# CV par lignes (features)
+VarAna <- apply(data[,13:15], 1, CV)
+#Calcul CV par feature sur les échantillons d'une classe
+CV_12 <- apply(data[,1:6], 1, CV)
+CV_24 <- apply(data[,7:12], 1, CV)
+#Variation biologique
+VarBio <- abs(CV_12-CV_24)
+#VarAna < VarBio
+FeatToKeep <- VarAna<VarBio
+#garder seulement features pour lesquelles VarAna < VarBio
+RelevantFeatures <- data[FeatToKeep,]
+#écrire nombre features après filtre
+cat("Number of features before filter = ", dim(data)[1])
+cat("Number of features after biological vs analytical variation filter = ", dim(RelevantFeatures)[1])
+```
+
+### occurence filter
+
+```{r warning=FALSE, echo=FALSE}
+library(Matrix)
+#compter feature détectée dans tous les échantillons
+NbDetectedAllClasses <- apply(data[,1:12], 1, nnzero)
+#compter feature détectée dans classe 1
+NbDetected_12 <- apply(data[,1:6], 1, nnzero)
+#compter feature détectée dans classe 2
+NbDetected_24 <- apply(data[,7:12], 1, nnzero)
+#garder features détectées dans tous les échantillons d'une classe
+FeatToKeep_12 <- NbDetected_12 == length(data[,1:6])
+FeatToKeep_24 <- NbDetected_24 == length(data[,7:12])
+FeatToKeep_all <- NbDetectedAllClasses == length(data)
+FeatToKeep_12and24 <- (NbDetected_12 == length(data[,1:6])) & (NbDetected_24 == length(data[,7:12]))
+RelevantFeat_occurence <- data[FeatToKeep_12and24,]
+#écrire nombre features après filtre
+cat("Number of features before filter = ", dim(data)[1])
+cat("Number of features after 100% occurence filter = ", dim(RelevantFeat_occurence)[1])
+```
+
